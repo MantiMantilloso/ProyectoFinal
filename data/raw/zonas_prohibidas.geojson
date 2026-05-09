@@ -1,0 +1,137 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "nombre": "central_park"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -73.9496061,
+              40.7647275
+            ],
+            [
+              -73.9496061,
+              40.8003135
+            ],
+            [
+              -73.9814075,
+              40.8003135
+            ],
+            [
+              -73.9814075,
+              40.7647275
+            ],
+            [
+              -73.9496061,
+              40.7647275
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "nombre": "hudson_river"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -73.99,
+              40.7
+            ],
+            [
+              -73.99,
+              40.88
+            ],
+            [
+              -74.03,
+              40.88
+            ],
+            [
+              -74.03,
+              40.7
+            ],
+            [
+              -73.99,
+              40.7
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "nombre": "east_river"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -73.94,
+              40.69
+            ],
+            [
+              -73.94,
+              40.8
+            ],
+            [
+              -73.97,
+              40.8
+            ],
+            [
+              -73.97,
+              40.69
+            ],
+            [
+              -73.94,
+              40.69
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "nombre": "harlem_river"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -73.92,
+              40.8
+            ],
+            [
+              -73.92,
+              40.87
+            ],
+            [
+              -73.94,
+              40.87
+            ],
+            [
+              -73.94,
+              40.8
+            ],
+            [
+              -73.92,
+              40.8
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}
