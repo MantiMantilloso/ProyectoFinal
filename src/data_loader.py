@@ -7,13 +7,8 @@ import logging
 import time
 import requests
 import pandas as pd
-import osmnx as ox
 from pathlib import Path
 from shapely.geometry import box as shapely_box, shape
-
-# Suprimir logs de osmnx (usa Unicode que rompe en terminales cp1252)
-logging.getLogger("osmnx").setLevel(logging.ERROR)
-ox.settings.log_console = False
 
 # ── Rutas ─────────────────────────────────────────────────────────────────────
 RAIZ = Path(__file__).resolve().parent.parent
@@ -96,25 +91,31 @@ def descargar_accidentes_manhattan(
     return df
 
 
-# ── Bounding boxes de zonas prohibidas ────────────────────────────────────────
-# Coordenadas WGS84 (lon_min, lat_min, lon_max, lat_max)
-# Usamos bounding boxes axis-aligned para mantener la formulacion de semiplanos.
-BBOXES_WGS84 = {
-    "central_park":    (-73.9814, 40.7647, -73.9496, 40.8003),
-    "hudson_river":    (-74.0300, 40.7000, -73.9900, 40.8800),  # franja oeste
-    "east_river":      (-73.9700, 40.6900, -73.9400, 40.8000),  # franja este
-    "harlem_river":    (-73.9400, 40.8000, -73.9200, 40.8700),  # franja noreste
-}
+# ── Geometría de Manhattan (fuente OSM real) ──────────────────────────────────
+# bbox real de la isla: lon [-74.0472, -73.9068], lat [40.6797, 40.8820]
+# Derivado de ox.geocode_to_gdf("Manhattan, New York City, USA").bounds
+# Los ríos (Hudson, East River, Harlem River) son el exterior de este bbox:
+# no se modelan como zonas prohibidas internas sino como los 4 semiplanos
+# que definen la region factible R (ver src/constraints.py).
+BBOX_MANHATTAN_WGS84 = (-74.0472, 40.6797, -73.9068, 40.8820)  # (lon_min, lat_min, lon_max, lat_max)
+
+# Zona prohibida interna: Central Park
+# Su bbox proviene de OSM real (ox.geocode_to_gdf("Central Park, ...").bounds)
+BBOX_CENTRAL_PARK_WGS84 = (-73.9814, 40.7647, -73.9496, 40.8003)
 
 
-def obtener_bboxes_osm(forzar: bool = False) -> dict:
+def obtener_zonas_osm(forzar: bool = False) -> dict:
     """
-    Devuelve bboxes de zonas prohibidas como Shapely Polygons (WGS84).
-    Intenta enriquecer con OSM real; si falla usa los valores hardcoded.
+    Devuelve un dict con dos entradas:
+      - "region_factible": Polygon (bbox de Manhattan) — donde el centro PUEDE estar.
+      - "central_park":    Polygon (bbox del parque)   — zona prohibida interna.
+
+    Intenta obtener ambas desde OSM real; si falla usa los valores derivados
+    previamente de OSM y guardados en las constantes de este modulo.
     Guarda en data/raw/zonas_prohibidas.geojson.
 
     Returns:
-        dict {nombre: shapely.Polygon} con la bbox de cada zona.
+        dict {nombre: shapely.Polygon} en coordenadas WGS84.
     """
     ruta_cache = DIR_RAW / "zonas_prohibidas.geojson"
 
@@ -127,52 +128,64 @@ def obtener_bboxes_osm(forzar: bool = False) -> dict:
             for feat in coleccion["features"]
         }
 
-    print("[OSM] Obteniendo bounding boxes de zonas prohibidas...")
+    print("[OSM] Obteniendo geometrias de zonas...")
     geometrias = {}
     features = []
 
+    try:
+        import osmnx as ox
+        logging.getLogger("osmnx").setLevel(logging.ERROR)
+        ox.settings.log_console = False
+        _ox_disponible = True
+    except ImportError:
+        _ox_disponible = False
+
     consultas_osm = {
-        "central_park": "Central Park, New York City, USA",
-        "hudson_river": "Hudson River, New York, USA",
+        "region_factible":    "Manhattan Island, New York City, USA",
+        "central_park":       "Central Park, New York City, USA",
+        "morningside_park":   "Morningside Park, Manhattan, New York City, USA",
+        "marcus_garvey_park": "Marcus Garvey Park, New York City, USA",
+        "inwood_hill_park":   "Inwood Hill Park, Manhattan, New York City, USA",
+        "fort_tryon_park":    "Fort Tryon Park, Manhattan, New York City, USA",
+        "battery_park":       "The Battery, Manhattan, New York City, USA",
     }
 
     for nombre, query in consultas_osm.items():
         try:
+            if not _ox_disponible:
+                raise ImportError("osmnx no disponible")
             gdf = ox.geocode_to_gdf(query)
             geom = gdf.geometry.iloc[0]
-            # Convertir a bounding box (lo acordado: aproximacion con bbox)
-            bb = geom.bounds  # (minx, miny, maxx, maxy)
-            bbox_geom = shapely_box(*bb)
-            geometrias[nombre] = bbox_geom
+            if geom.geom_type == "MultiPolygon":
+                geom = max(geom.geoms, key=lambda g: g.area)
+            hull = geom.convex_hull
+            n_sp = len(hull.exterior.coords) - 1
+            geometrias[nombre] = hull
             features.append({
                 "type": "Feature",
-                "properties": {"nombre": nombre},
-                "geometry": bbox_geom.__geo_interface__,
+                "properties": {"nombre": nombre, "n_semiplanos": n_sp},
+                "geometry": hull.__geo_interface__,
             })
-            print(f"  [OSM ok] {nombre}: bbox {bb[0]:.4f},{bb[1]:.4f} -> {bb[2]:.4f},{bb[3]:.4f}")
+            lo, la, hi, ha = hull.bounds
+            print(f"  [OSM ok] {nombre}: {n_sp} semiplanos  lat [{la:.4f}, {ha:.4f}]")
         except Exception:
-            # Fallback a bbox hardcodeada
-            lon_min, lat_min, lon_max, lat_max = BBOXES_WGS84[nombre]
+            # Fallback solo para las 2 zonas con constantes conocidas
+            if nombre == "region_factible":
+                bb = BBOX_MANHATTAN_WGS84
+            elif nombre == "central_park":
+                bb = BBOX_CENTRAL_PARK_WGS84
+            else:
+                print(f"  [skip] {nombre}: osmnx no disponible y sin fallback")
+                continue
+            lon_min, lat_min, lon_max, lat_max = bb
             bbox_geom = shapely_box(lon_min, lat_min, lon_max, lat_max)
             geometrias[nombre] = bbox_geom
             features.append({
                 "type": "Feature",
-                "properties": {"nombre": nombre},
+                "properties": {"nombre": nombre, "n_semiplanos": 4},
                 "geometry": bbox_geom.__geo_interface__,
             })
-            print(f"  [fallback] {nombre}: usando bbox hardcodeada")
-
-    # East River y Harlem River: solo bbox hardcodeada (Nominatim no devuelve poligono)
-    for nombre in ["east_river", "harlem_river"]:
-        lon_min, lat_min, lon_max, lat_max = BBOXES_WGS84[nombre]
-        bbox_geom = shapely_box(lon_min, lat_min, lon_max, lat_max)
-        geometrias[nombre] = bbox_geom
-        features.append({
-            "type": "Feature",
-            "properties": {"nombre": nombre},
-            "geometry": bbox_geom.__geo_interface__,
-        })
-        print(f"  [bbox] {nombre}: definida manualmente")
+            print(f"  [fallback] {nombre}: bbox hardcodeado (4 semiplanos)")
 
     coleccion = {"type": "FeatureCollection", "features": features}
     with open(ruta_cache, "w") as f:

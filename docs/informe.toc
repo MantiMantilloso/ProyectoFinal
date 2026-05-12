@@ -1,0 +1,33 @@
+\babel@toc {spanish}{}\relax 
+\contentsline {section}{\numberline {1}Introducción}{3}{section.1}%
+\contentsline {subsection}{\numberline {1.1}Objetivos}{3}{subsection.1.1}%
+\contentsline {subsection}{\numberline {1.2}Estructura del documento}{3}{subsection.1.2}%
+\contentsline {section}{\numberline {2}Formulación matemática}{3}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Smallest Enclosing Ball}{3}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Representación por semiplanos}{4}{subsection.2.2}%
+\contentsline {subsection}{\numberline {2.3}Conjunto factible no-convexo}{4}{subsection.2.3}%
+\contentsline {subsection}{\numberline {2.4}SEB con restricciones}{4}{subsection.2.4}%
+\contentsline {subsection}{\numberline {2.5}Sub-problema 1D: SEB en segmento}{5}{subsection.2.5}%
+\contentsline {section}{\numberline {3}Algoritmos}{5}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Algoritmo de Seidel (SEB libre)}{5}{subsection.3.1}%
+\contentsline {paragraph}{Welzl (baseline).}{6}{section*.2}%
+\contentsline {subsection}{\numberline {3.2}Algoritmo de enumeración de aristas activas (SEB restringido)}{6}{subsection.3.2}%
+\contentsline {paragraph}{Complejidad.}{6}{section*.3}%
+\contentsline {section}{\numberline {4}Datos y configuración geográfica}{6}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Dataset de accidentes}{6}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Proyección cartográfica}{6}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Geometrías OSM}{7}{subsection.4.3}%
+\contentsline {section}{\numberline {5}Experimentos y resultados}{7}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Experimento 1: SEB libre vs.\ restringido}{7}{subsection.5.1}%
+\contentsline {paragraph}{SEB libre.}{7}{section*.5}%
+\contentsline {paragraph}{SEB restringido.}{7}{section*.6}%
+\contentsline {paragraph}{Validación.}{8}{section*.8}%
+\contentsline {paragraph}{Zoom en Central Park.}{8}{section*.9}%
+\contentsline {subsection}{\numberline {5.2}Experimento 2: Complejidad temporal}{8}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}Experimento 3: Condición de frontera $\mathcal {F}= \emptyset $}{9}{subsection.5.3}%
+\contentsline {subsection}{\numberline {5.4}Experimento 4 (BONUS): Sensibilidad geométrica}{10}{subsection.5.4}%
+\contentsline {section}{\numberline {6}Implementación}{11}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Arquitectura del código}{11}{subsection.6.1}%
+\contentsline {subsection}{\numberline {6.2}Aplicación interactiva}{11}{subsection.6.2}%
+\contentsline {section}{\numberline {7}Conclusiones}{12}{section.7}%
+\contentsline {section}{Referencias}{13}{section*.17}%
