@@ -86,18 +86,20 @@ def _construir_region_R() -> Polygon:
 def _zona_a_poligono_utm(geom_dict: dict) -> Optional[Polygon]:
     """
     Convierte una geometria GeoJSON (Polygon o MultiPolygon) a un Polygon
-    convexo en UTM 18N. Para MultiPolygon usa la pieza de mayor area.
-    El convex_hull es necesario porque el algoritmo asume zonas convexas.
+    en UTM 18N. Para MultiPolygon usa la pieza de mayor area.
+
+    Nota: NO usamos convex_hull. Ese paso distorsiona zonas no-convexas
+    (p.ej. sectores/community districts) y puede introducir restricciones
+    falsas al "rellenar" concavidades.
     """
     geom = shape(geom_dict)
     if isinstance(geom, MultiPolygon):
         geom = max(geom.geoms, key=lambda g: g.area)
     if not isinstance(geom, Polygon):
         return None
-    hull = geom.convex_hull
-    if not isinstance(hull, Polygon) or hull.is_empty:
+    if geom.is_empty:
         return None
-    return _reproyectar_poligono_a_utm(hull)
+    return _reproyectar_poligono_a_utm(geom)
 
 
 def _centro_utm_a_latlon(c: Any) -> Optional[list[float]]:
