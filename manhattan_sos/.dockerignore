@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.venv/
+node_modules/
+.DS_Store
+*.log
+.streamlit_log.txt
+streamlit_err.txt
+streamlit_log.txt

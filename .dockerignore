@@ -1,0 +1,46 @@
+# Build context para Dockerfile.api (raiz del proyecto).
+# Solo necesitamos src/, manhattan_sos/requirements.txt, manhattan_sos/server.py
+# y data/processed/accidentes_utm.parquet. El resto se ignora para mantener
+# el contexto pequeno y reproducible.
+
+# venv / caches python
+.venv/
+venv/
+env/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# notebooks y reportes
+notebooks/
+docs/
+*.ipynb
+.ipynb_checkpoints/
+
+# logs y temporales
+*.log
+streamlit_log.txt
+streamlit_err.txt
+
+# IDE / SO
+.git/
+.github/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# datos crudos y resultados que el backend NO necesita
+data/raw/
+data/results/
+
+# la otra app y su propia copia de datos / frontend
+app.py
+manhattan_sos/data/
+manhattan_sos/index.html
+manhattan_sos/app.js
+manhattan_sos/styles.css
+manhattan_sos/nginx.conf
+manhattan_sos/Dockerfile.web
+manhattan_sos/build_zones.py
+manhattan_sos/README.md

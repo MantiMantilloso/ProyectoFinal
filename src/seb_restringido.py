@@ -37,7 +37,8 @@ from __future__ import annotations
 from typing import List, Tuple, Optional
 import numpy as np
 from scipy.optimize import minimize_scalar
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, MultiPolygon
+from shapely.ops import unary_union
 
 from .seb_seidel import seb_seidel
 from .seb_primitivas import Bola, EPS
@@ -45,8 +46,44 @@ from .constraints import (
     Semiplano,
     aristas,
     semiplanos,
-    punto_en_F,
+    punto_en_F_union,
 )
+
+
+def _preparar_zonas(
+    zonas_prohibidas: List[Tuple[str, Polygon]],
+):
+    """
+    Devuelve (Z_union, union_pols):
+      - Z_union    : geometria Shapely del union (Polygon | MultiPolygon | None)
+      - union_pols : lista de Polygon componentes para enumerar aristas
+    """
+    if not zonas_prohibidas:
+        return None, []
+    Z_union = unary_union([pol for _, pol in zonas_prohibidas])
+    if isinstance(Z_union, Polygon):
+        return Z_union, [Z_union]
+    if isinstance(Z_union, MultiPolygon):
+        return Z_union, list(Z_union.geoms)
+    return None, []
+
+
+def _interseccion_t(
+    p1: np.ndarray, p2: np.ndarray,
+    q1: np.ndarray, q2: np.ndarray,
+    eps: float = 1e-10,
+) -> Optional[float]:
+    v = p2 - p1
+    w = q2 - q1
+    d = q1 - p1
+    det = w[0] * v[1] - v[0] * w[1]
+    if abs(det) < eps:
+        return None
+    t = (w[0] * d[1] - d[0] * w[1]) / det
+    s = (v[0] * d[1] - d[0] * v[1]) / det
+    if -eps <= t <= 1 + eps and -eps <= s <= 1 + eps:
+        return float(np.clip(t, 0.0, 1.0))
+    return None
 
 
 # --- sub-problema 1D --------------------------------------------------------
@@ -125,12 +162,15 @@ def seb_restringido(
             candidatos: lista de dicts (uno por arista evaluada y factible)
     """
     sps_R = semiplanos(poligono_R)
-    sps_zonas = [semiplanos(p) for _, p in zonas_prohibidas]
+
+    # Z_union: geometria Shapely del union de zonas (puede ser no-convexa).
+    # union_pols: componentes para enumerar aristas exteriores.
+    Z_union, union_pols = _preparar_zonas(zonas_prohibidas)
 
     # 1) SEB sin restricciones
     c_libre, r_libre = seb_seidel(puntos, semilla=semilla)
 
-    if punto_en_F(c_libre, sps_R, sps_zonas):
+    if punto_en_F_union(c_libre, sps_R, Z_union):
         return {
             "centro": c_libre,
             "radio": r_libre,
@@ -147,7 +187,12 @@ def seb_restringido(
     fuentes: List[Tuple[str, Polygon]] = []
     if incluir_R_en_aristas:
         fuentes.append(("region_factible", poligono_R))
-    fuentes.extend(zonas_prohibidas)
+    for i, p in enumerate(union_pols):
+        fuentes.append((f"zona_union_{i}", p))
+
+    todas_aristas_geom: List[Tuple[np.ndarray, np.ndarray]] = []
+    for _, pol in fuentes:
+        todas_aristas_geom.extend(aristas(pol))
 
     candidatos: list[dict] = []
     n_evaluados = 0
@@ -156,7 +201,7 @@ def seb_restringido(
         for j, (p1, p2) in enumerate(aristas(poligono)):
             n_evaluados += 1
             (c, r), t = seb_en_segmento(puntos, p1, p2)
-            if punto_en_F(c, sps_R, sps_zonas):
+            if punto_en_F_union(c, sps_R, Z_union):
                 candidatos.append({
                     "centro": c,
                     "radio": r,
@@ -166,6 +211,25 @@ def seb_restringido(
                     "p2": p2,
                     "t": t,
                 })
+
+            v = p2 - p1
+            for q1, q2 in todas_aristas_geom:
+                t_j = _interseccion_t(p1, p2, q1, q2)
+                if t_j is None or abs(t_j - t) < 1e-9:
+                    continue
+                c_j = p1 + t_j * v
+                r_j = float(np.max(np.linalg.norm(puntos - c_j, axis=1)))
+                if punto_en_F_union(c_j, sps_R, Z_union):
+                    n_evaluados += 1
+                    candidatos.append({
+                        "centro": c_j,
+                        "radio": r_j,
+                        "fuente": nombre,
+                        "arista_idx": j,
+                        "p1": p1,
+                        "p2": p2,
+                        "t": t_j,
+                    })
 
     if not candidatos:
         return {

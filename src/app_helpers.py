@@ -72,6 +72,63 @@ def agregar_leyenda(m: folium.Map, items: list[tuple[str, str]]) -> None:
     m.get_root().html.add_child(folium.Element(html))
 
 
+def puntos_soporte(puntos: np.ndarray, c: np.ndarray, r: float,
+                   tol: float = 1e-6) -> np.ndarray:
+    """
+    Puntos del input que estan en la frontera del SEB: ||p - c|| / r >= 1 - tol.
+
+    En 2D el SEB tiene 2 o 3 puntos soporte (LP-type, dim combinatoria 3).
+    """
+    if r <= 0:
+        return np.empty((0, 2))
+    d = np.linalg.norm(puntos - c, axis=1)
+    mask = d / r >= 1.0 - tol
+    return puntos[mask]
+
+
+def dibujar_soporte(m: folium.Map, soporte_utm: np.ndarray,
+                    color: str = "#10b981", label: str = "Soporte") -> None:
+    """Resalta los puntos soporte con marcador grande + halo."""
+    for i, p in enumerate(soporte_utm):
+        lat, lon = utm_a_latlon(p[0], p[1])
+        folium.CircleMarker(
+            location=(lat, lon), radius=11,
+            color=color, fill=False, weight=2.5, opacity=0.8,
+            tooltip=f"{label} #{i+1} (en la frontera del SEB)",
+        ).add_to(m)
+        folium.CircleMarker(
+            location=(lat, lon), radius=5,
+            color=color, fill=True, fill_color=color, fill_opacity=1.0,
+            weight=0,
+        ).add_to(m)
+
+
+def dibujar_arista(m: folium.Map, p1: np.ndarray, p2: np.ndarray,
+                   color: str = "#a855f7", label: str = "Arista",
+                   weight: float = 4.5) -> None:
+    """Resalta un segmento (e.g. la arista vinculante del SEB restringido)."""
+    lat1, lon1 = utm_a_latlon(p1[0], p1[1])
+    lat2, lon2 = utm_a_latlon(p2[0], p2[1])
+    folium.PolyLine(
+        locations=[(lat1, lon1), (lat2, lon2)],
+        color=color, weight=weight, opacity=0.95, tooltip=label,
+    ).add_to(m)
+
+
+def ajustar_a_seb(m: folium.Map, c: np.ndarray, r: float,
+                  margen: float = 1.05) -> None:
+    """Encuadra el mapa al bounding box del SEB con un margen."""
+    if c is None or r is None or not np.isfinite(r) or r <= 0:
+        return
+    rr = r * margen
+    corners = [(c[0] - rr, c[1] - rr), (c[0] - rr, c[1] + rr),
+               (c[0] + rr, c[1] - rr), (c[0] + rr, c[1] + rr)]
+    latlons = [utm_a_latlon(x, y) for x, y in corners]
+    lats = [ll[0] for ll in latlons]
+    lons = [ll[1] for ll in latlons]
+    m.fit_bounds([[min(lats), min(lons)], [max(lats), max(lons)]])
+
+
 def fmt_km(v) -> str:
     if v is None or (isinstance(v, float) and not np.isfinite(v)):
         return "N/A"

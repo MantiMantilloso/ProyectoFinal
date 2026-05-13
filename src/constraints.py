@@ -26,9 +26,9 @@ Por tanto:
 """
 
 from __future__ import annotations
-from typing import List, Tuple, Iterable
+from typing import List, Tuple, Iterable, Optional, Union
 import numpy as np
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, MultiPolygon, Point
 from pyproj import Transformer
 
 # Tolerancia numerica (en metros, dado que trabajamos en UTM ~1e6 m)
@@ -143,6 +143,31 @@ def punto_en_F(
         return False
     for sps_z in sps_zonas:
         if punto_estrictamente_en_poligono(c, sps_z, tol=tol):
+            return False
+    return True
+
+
+def punto_en_F_union(
+    c: np.ndarray,
+    sps_R: List[Semiplano],
+    Z_union: Optional[Union[Polygon, MultiPolygon]],
+    tol: float = EPS,
+) -> bool:
+    """
+    True si c pertenece al conjunto factible F = R \\ Z_union.
+
+    A diferencia de punto_en_F, usa Shapely contains() para el chequeo de
+    zonas en lugar de semiplanos. Esto es correcto incluso cuando Z_union es
+    no-convexo (resultado de unary_union de zonas adyacentes).
+
+    R sigue chequeandose con semiplanos (R es convexo — bbox de Manhattan).
+    """
+    if not punto_en_poligono(c, sps_R, tol=tol):
+        return False
+    if Z_union is not None:
+        # contains() devuelve True solo para puntos estrictamente en el interior,
+        # misma semantica que punto_estrictamente_en_poligono.
+        if Z_union.contains(Point(float(c[0]), float(c[1]))):
             return False
     return True
 

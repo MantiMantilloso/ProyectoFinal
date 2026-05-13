@@ -1,0 +1,26 @@
+# Manhattan S.O.S. - backend FastAPI
+# Build context: project root (./)
+#   docker build -f manhattan_sos/Dockerfile.api -t manhattan-sos-api .
+
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONPATH=/app
+
+WORKDIR /app
+
+# requirements primero -> mejor cache de capas
+COPY manhattan_sos/requirements.txt ./requirements.txt
+RUN pip install -r requirements.txt
+
+# codigo del algoritmo + servidor + datos
+COPY src/ ./src/
+COPY manhattan_sos/server.py ./manhattan_sos/server.py
+COPY data/processed/accidentes_utm.parquet ./data/processed/accidentes_utm.parquet
+
+EXPOSE 8000
+
+CMD ["uvicorn", "manhattan_sos.server:app", "--host", "0.0.0.0", "--port", "8000"]
