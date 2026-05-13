@@ -37,6 +37,8 @@ data/results/
 # la otra app y su propia copia de datos / frontend
 app.py
 manhattan_sos/data/
+!manhattan_sos/data/
+!manhattan_sos/data/zones.geojson
 manhattan_sos/index.html
 manhattan_sos/app.js
 manhattan_sos/styles.css

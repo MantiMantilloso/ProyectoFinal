@@ -24,7 +24,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from pyproj import Transformer
-from shapely.geometry import Polygon, MultiPolygon, shape, box as shapely_box
+from shapely.geometry import Polygon, MultiPolygon, Point, shape, box as shapely_box
+from shapely.ops import unary_union
 
 # --- imports de src/ (acceso al algoritmo) ----------------------------------
 
@@ -45,15 +46,18 @@ BBOX_MANHATTAN = (-74.0472, 40.6797, -73.9068, 40.8820)
 # Tamano de la muestra de accidentes que usaremos para el SEB (rapido en demo)
 DEMO_SAMPLE = 500
 SEED = 42
+MANHATTAN_STRICT_MARGIN_M = 2.0
 
 STATIC_DIR = Path(__file__).resolve().parent
 ACCIDENTS_PARQUET = ROOT / "data" / "processed" / "accidentes_utm.parquet"
+ZONES_GEOJSON = STATIC_DIR / "data" / "zones.geojson"
 
 # --- estado de la app (precomputado en startup) -----------------------------
 
 PUNTOS_UTM: np.ndarray         # (n, 2) en UTM
 PUNTOS_LATLON: list[list[float]]  # [[lat, lng], ...] (mismo orden que PUNTOS_UTM)
 REGION_R_UTM: Polygon          # bbox de Manhattan reproyectado a UTM
+MANHATTAN_MASK_UTM: Polygon | MultiPolygon  # mascara real (sectores) para validacion final
 
 
 def _reproyectar_poligono_a_utm(pol_wgs: Polygon) -> Polygon:
@@ -81,6 +85,50 @@ def _construir_region_R() -> Polygon:
     lon_min, lat_min, lon_max, lat_max = BBOX_MANHATTAN
     bbox = shapely_box(lon_min, lat_min, lon_max, lat_max)
     return _reproyectar_poligono_a_utm(bbox)
+
+
+def _construir_mascara_manhattan_utm() -> Polygon | MultiPolygon:
+    """
+    Construye la mascara "real" de Manhattan uniendo todos los features
+    categoria 'sector' del zones.geojson y reproyectando a UTM.
+    """
+    if not ZONES_GEOJSON.exists():
+        raise RuntimeError(f"No existe {ZONES_GEOJSON}")
+
+    import json
+    fc = json.loads(ZONES_GEOJSON.read_text(encoding="utf-8"))
+
+    geoms_wgs = []
+    for f in fc.get("features", []):
+        props = f.get("properties") or {}
+        if props.get("category") != "sector":
+            continue
+        g = shape(f.get("geometry"))
+        if g.is_empty:
+            continue
+        geoms_wgs.append(g)
+
+    if not geoms_wgs:
+        raise RuntimeError("No se encontraron zonas 'sector' para mascara Manhattan")
+
+    union_wgs = unary_union(geoms_wgs)
+
+    def _poly_to_utm(p: Polygon) -> Polygon:
+        return _reproyectar_poligono_a_utm(p)
+
+    if isinstance(union_wgs, Polygon):
+        mask_utm: Polygon | MultiPolygon = _poly_to_utm(union_wgs)
+    elif isinstance(union_wgs, MultiPolygon):
+        mask_utm = MultiPolygon([_poly_to_utm(p) for p in union_wgs.geoms if not p.is_empty])
+    else:
+        raise RuntimeError("Union de sectores no produjo Polygon/MultiPolygon")
+
+    if MANHATTAN_STRICT_MARGIN_M > 0:
+        shrunk = mask_utm.buffer(-MANHATTAN_STRICT_MARGIN_M)
+        if not shrunk.is_empty:
+            mask_utm = shrunk
+
+    return mask_utm
 
 
 def _zona_a_poligono_utm(geom_dict: dict) -> Optional[Polygon]:
@@ -145,11 +193,13 @@ class SEBResponse(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global PUNTOS_UTM, PUNTOS_LATLON, REGION_R_UTM
+    global PUNTOS_UTM, PUNTOS_LATLON, REGION_R_UTM, MANHATTAN_MASK_UTM
     PUNTOS_UTM, PUNTOS_LATLON = _cargar_accidentes()
     REGION_R_UTM = _construir_region_R()
+    MANHATTAN_MASK_UTM = _construir_mascara_manhattan_utm()
     print(f"[startup] accidentes en demo: {len(PUNTOS_UTM)} (de {ACCIDENTS_PARQUET.name})")
     print(f"[startup] region R: bbox UTM {REGION_R_UTM.bounds}")
+    print(f"[startup] mascara Manhattan strict-margin={MANHATTAN_STRICT_MARGIN_M} m")
     yield
 
 
@@ -170,32 +220,57 @@ def _computar_seb(zonas_utm: list[tuple[str, Polygon]]) -> dict:
         incluir_R=True,
     )
 
-    estado = res["estado"]
+    estado_base = res["estado"]
     c_libre = res["centro_libre"]
     r_libre = res["radio_libre"]
     n_total = res["n_total"]
-    n_factibles = res["n_factibles"]
-    mejor = res["mejor"]
 
-    if estado == "libre":
-        center_latlon = _centro_utm_a_latlon(c_libre)
-        radius_m = float(r_libre)
-        active_edge = None
-    elif estado == "restringido" and mejor is not None:
-        center_latlon = _centro_utm_a_latlon(mejor["c"])
-        radius_m = float(mejor["r"])
-        p1_latlon = _centro_utm_a_latlon(mejor["p1"])
-        p2_latlon = _centro_utm_a_latlon(mejor["p2"])
-        active_edge = {
-            "source": str(mejor["fuente"]),
-            "p1": p1_latlon,
-            "p2": p2_latlon,
-        }
-    else:
+    def _en_mascara(c: np.ndarray) -> bool:
+        pt = Point(float(c[0]), float(c[1]))
+        return bool(MANHATTAN_MASK_UTM.contains(pt))
+
+    # Construir opciones factibles del solver y luego filtrar por mascara.
+    opciones: list[dict] = []
+
+    # Si el problema base es libre, c_libre es candidato valido del solver.
+    if estado_base == "libre":
+        opciones.append({
+            "tipo": "libre",
+            "c": c_libre,
+            "r": float(r_libre),
+            "edge": None,
+        })
+
+    # Candidatos factibles del algoritmo por aristas.
+    for cand in res["candidatos"]:
+        if not bool(cand.get("factible", False)):
+            continue
+        opciones.append({
+            "tipo": "arista",
+            "c": cand["c"],
+            "r": float(cand["r"]),
+            "edge": {
+                "source": str(cand["fuente"]),
+                "p1": _centro_utm_a_latlon(cand["p1"]),
+                "p2": _centro_utm_a_latlon(cand["p2"]),
+            },
+        })
+
+    opciones_mascara = [o for o in opciones if _en_mascara(o["c"])]
+
+    if not opciones_mascara:
         estado = "infactible"
         center_latlon = None
         radius_m = None
         active_edge = None
+        n_factibles = 0
+    else:
+        mejor = min(opciones_mascara, key=lambda o: o["r"])
+        center_latlon = _centro_utm_a_latlon(mejor["c"])
+        radius_m = float(mejor["r"])
+        active_edge = mejor["edge"]
+        n_factibles = len(opciones_mascara)
+        estado = "libre" if mejor["tipo"] == "libre" else "restringido"
 
     return {
         "status": estado,

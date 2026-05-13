@@ -19,6 +19,7 @@ RUN pip install -r requirements.txt
 # codigo del algoritmo + servidor + datos
 COPY src/ ./src/
 COPY manhattan_sos/server.py ./manhattan_sos/server.py
+COPY manhattan_sos/data/zones.geojson ./manhattan_sos/data/zones.geojson
 COPY data/processed/accidentes_utm.parquet ./data/processed/accidentes_utm.parquet
 
 EXPOSE 8000
